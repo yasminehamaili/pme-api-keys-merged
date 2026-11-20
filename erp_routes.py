@@ -2,6 +2,7 @@
 ERP export endpoints (all stateless, all protected by your existing API-key auth + rate limits).
 
   GET /v1/erp/resources                  what can be exported
+  GET /v1/erp/{resource}                 same, dedicated route per resource (invoices, inventory, customers)
   GET /v1/erp/export/{resource}          one resource as csv | json | ndjson | xlsx
   GET /v1/erp/export-bundle              several resources: one ZIP (csv/json/ndjson) or one XLSX workbook
 """
@@ -203,3 +204,23 @@ async def export_bundle(
                                         "ms": round((time.perf_counter() - started) * 1000, 1)})
     return StreamingResponse(file_chunks(tmp), media_type=media,
                              headers=_headers(filename, size, rows_total, skipped_total))
+
+
+# ------------------------------------------- one dedicated endpoint per resource
+# GET /v1/erp/invoices, /v1/erp/inventory, /v1/erp/customers ... generated from RESOURCES, so a
+# new entry in erp_schemas.RESOURCES gets its own endpoint automatically. Each call is
+# independent: clients can request them in parallel instead of waiting on the bundle.
+def _register_resource_route(name: str) -> None:
+    async def handler(
+        fmt: Annotated[FormatName, Query(alias="format")] = "csv",
+        filters: Filters = Depends(),
+        auth: dict = Depends(export_guard),
+    ):
+        return await export_resource(name, fmt, filters, auth)
+
+    handler.__name__ = f"export_{name}"
+    router.add_api_route(f"/{name}", handler, methods=["GET"], name=f"export_{name}")
+
+
+for _name in RESOURCES:
+    _register_resource_route(_name)
