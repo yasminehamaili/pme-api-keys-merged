@@ -13,10 +13,11 @@ import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, StringConstraints
 from redis.exceptions import RedisError
@@ -26,11 +27,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import security
 from db import engine, get_session
-from erp_client import close_erp_client
+from erp_client import ERPError, close_erp_client, get_erp_client
+from erp_config import ERPNotConfigured, get_settings
+from erp_export import ExportTooLarge, open_rows
+from erp_routes import http_error
 from erp_routes import router as erp_router
+from erp_schemas import RESOURCES
 from logging_config import setup_logging
 from ratelimit import enforce_limits, hit
 from redis_client import redis
+from report import SalesAccumulator, resolve_period
 
 log = logging.getLogger("api")
 
@@ -205,6 +211,51 @@ async def usage(customer: Customer, session: Session):
             "percent": round(min(used / limit, 1) * 100, 1) if limit else 100.0}
 
 
+# ============================== SALES REPORT ==============================
+REPORTS_PER_MINUTE = 10
+
+
+@app.get("/api/report/sales")
+async def sales_report(
+    customer: Customer,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    retention_target: Annotated[float, Query(ge=0, le=100)] = 60.0,
+):
+    """Numbers for the dashboard's Report Panel (dashboard session token, like /api/usage).
+
+    Reads invoices from the ERP for the period AND the previous period of the same length.
+    No dates -> the last 31 days. Retention target is a percentage.
+    """
+    try:
+        period = resolve_period(date_from, date_to, datetime.now(timezone.utc).date())
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+
+    sec = int(time.time())
+    try:
+        ok, _ = await hit(f"rl:report:{customer['id']}:{sec // 60}", REPORTS_PER_MINUTE, 60)
+    except RedisError:
+        log.exception("redis unavailable")
+        raise HTTPException(503, "Rate limiter unavailable, try again shortly")
+    if not ok:
+        raise HTTPException(429, "Too many reports, slow down",
+                            headers={"Retry-After": str(60 - sec % 60)})
+
+    ctx = {"customer_id": customer["id"], "resource": "invoices", "report": "sales"}
+    acc = SalesAccumulator(period)
+    try:
+        rows, stats = await open_rows(
+            get_erp_client(), RESOURCES["invoices"],
+            {"date_from": period.previous.start, "date_to": period.end},
+            None, get_settings().max_export_rows)
+        async for row in rows:
+            acc.add(row)
+    except (ERPError, ERPNotConfigured, ExportTooLarge) as exc:
+        raise http_error(exc, ctx)
+    return acc.result(stats.skipped, retention_target)
+
+
 # ============================ PROTECTED API ===============================
 @app.get("/v1/ping")
 async def ping(auth=Depends(enforce_limits)):
@@ -223,3 +274,8 @@ async def health(session: Session):
 @app.get("/", include_in_schema=False)
 async def dashboard():
     return FileResponse(Path(__file__).parent / "index.html")
+
+
+@app.get("/report", include_in_schema=False)
+async def report_page():
+    return FileResponse(Path(__file__).parent / "report-panel.html")
