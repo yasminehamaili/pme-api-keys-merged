@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sales report</title>
+<style>
+  /* Tokens = the Figma "Navigation UI" variables (light), same names and values. */
+  :root {
+    --color-bg-canvas: #fcfcfd;   --color-bg-surface: #ffffff;  --color-bg-subtle: #f9fafb;
+    --color-text-primary: #101828; --color-text-secondary: #475467; --color-text-tertiary: #667085;
+    --color-border-subtle: #eaecf0;
+    --color-brand-primary: #3538cd; --color-brand-soft: #eff4ff;
+    --color-status-uploaded: #027a48; --color-status-uploaded-bg: #ecfdf3;
+    --color-icon-default: #667085;
+    --radius-sm: 8px; --radius-md: 12px; --radius-lg: 16px; --radius-pill: 999px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--color-bg-canvas); color: var(--color-text-primary);
+         font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { padding: 24px 16px; display: flex; justify-content: center; }
+  [hidden] { display: none !important; }
+  svg { flex: none; display: block; }
+  svg * { stroke: var(--color-icon-default); stroke-width: 1.5; fill: none;
+          stroke-linecap: round; stroke-linejoin: round; }
+
+  /* ---- Report Panel (579px in Figma) ---- */
+  .report-panel { width: min(579px, 100%); padding: 0 14px 14px; background: var(--color-bg-canvas);
+                  display: flex; flex-direction: column; gap: 4px; }
+
+  /* Header */
+  .header { display: flex; justify-content: space-between; align-items: center; gap: 8px;
+            padding: 6px 12px; flex-wrap: wrap; }
+  .group { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .title { margin: 0; font-size: 15px; font-weight: 600; line-height: 1.2; }
+  .chip { display: flex; align-items: center; gap: 5px; padding: 4px 7px; background: var(--color-bg-surface);
+          border: 1px solid var(--color-border-subtle); border-radius: var(--radius-sm);
+          font-size: 11px; font-weight: 500; line-height: 1.2; white-space: nowrap; }
+  .vs { font-size: 11px; color: var(--color-text-tertiary); white-space: nowrap; }
+  .file { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--color-text-secondary);
+          white-space: nowrap; }
+  button.chip { font-family: inherit; color: var(--color-text-primary); cursor: pointer; padding: 4px 7px; }
+  button.chip:hover:not(:disabled) { background: var(--color-bg-subtle); }
+  button.chip:disabled { opacity: .55; cursor: progress; }
+  button.chip:focus-visible, .bell:focus-visible { outline: 2px solid var(--color-brand-primary); outline-offset: 2px; }
+  .bell { display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0;
+          background: none; cursor: pointer; border-radius: var(--radius-sm); }
+
+  /* Card */
+  .card { background: var(--color-bg-surface); border: 1.5px solid var(--color-brand-primary);
+          border-radius: var(--radius-lg); overflow: hidden; }
+  .top { padding: 8px 12px 10px; display: flex; flex-direction: column; gap: 6px; }
+  .title-row { display: flex; align-items: center; gap: 8px; }
+  .rapport { font-size: 13px; font-weight: 500; color: var(--color-text-secondary); }
+  .quality { padding: 1px 6px; border-radius: var(--radius-pill); font-size: 11px; font-weight: 500;
+             color: var(--color-status-uploaded); background: var(--color-status-uploaded-bg); }
+
+  /* Steps (Report Step: Active / Default) */
+  .steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+  .step { display: flex; align-items: flex-start; gap: 6px; padding: 10px 4px 10px 8px;
+          background: var(--color-bg-surface); border: 1px solid var(--color-border-subtle);
+          border-radius: var(--radius-md); font-size: 12px; font-weight: 500; line-height: 1.25; }
+  .num { display: grid; place-items: center; flex: none; width: 14px; height: 14px; border-radius: var(--radius-pill);
+         font-size: 10px; font-weight: 600; color: var(--color-text-tertiary); }
+  .step[aria-current="step"] .num { background: var(--color-brand-primary); color: #fff; }
+
+  /* Summary + info rows */
+  .summary { margin: 0; padding: 9px 12px; border-top: 1px solid var(--color-border-subtle);
+             font-size: 13px; font-weight: 600; line-height: 1.3; }
+  .rows { padding: 0 12px 44px; }
+  .info { display: flex; align-items: center; gap: 10px; padding: 5px 0;
+          border-top: 1px solid var(--color-border-subtle); font-size: 12px; }
+  .tag { padding: 2px 6px; border-radius: var(--radius-sm); font-size: 11px; font-weight: 500; line-height: 1.2; }
+  .tag.kpi { background: var(--color-brand-soft); color: var(--color-brand-primary); }
+  .tag.data { background: var(--color-bg-subtle); border: 1px solid var(--color-border-subtle);
+              color: var(--color-text-secondary); }
+  .error { color: #b42318; }
+  .error a { color: inherit; }
+  .loading .summary, .loading .info span:last-child { color: var(--color-text-tertiary); }
+</style>
+</head>
+<body>
+<main>
+  <section class="report-panel" id="panel" aria-labelledby="pageTitle">
+    <header class="header">
+      <div class="group">
+        <h1 class="title" id="pageTitle">Sales</h1>
+        <div class="chip" title="Reporting period">
+          <svg width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="4.5" width="14" height="12.5" rx="2.5"/><path d="M3 8.5h14M6.5 3v3M13.5 3v3"/></svg>
+          <span id="range">—</span>
+        </div>
+        <span class="vs">vs previous period</span>
+      </div>
+      <div class="group">
+        <span class="file">
+          <svg width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 2.5h6.5L16 7v9.5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-13a1 1 0 0 1 1-1z"/><path d="M11.5 2.5V7H16"/></svg>
+          <span id="source">ERP invoices</span>
+        </span>
+        <button class="chip" id="reload" type="button" aria-label="Re-import data from the ERP">
+          <svg width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 13V3.5M6 7l4-4 4 4M3.5 13.5v2a1.5 1.5 0 0 0 1.5 1.5h10a1.5 1.5 0 0 0 1.5-1.5v-2"/></svg>
+          Re-import
+        </button>
+        <button class="bell" type="button" aria-label="Notifications">
+          <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 8a5 5 0 0 1 10 0c0 5 2 6 2 6H3s2-1 2-6z"/><path d="M8.5 17a1.6 1.6 0 0 0 3 0"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="card loading" id="card">
+      <div class="top">
+        <div class="title-row">
+          <span class="rapport">Rapport</span>
+          <span class="quality" id="quality" hidden></span>
+        </div>
+        <ol class="steps">
+          <li class="step" aria-current="step"><span class="num">1</span><span>Analyse des données</span></li>
+          <li class="step"><span class="num">2</span><span>Preuves historiques et causes réelles</span></li>
+          <li class="step"><span class="num">3</span><span>Problèmes actuels et à venir</span></li>
+          <li class="step"><span class="num">4</span><span>Stratégies recommandées</span></li>
+        </ol>
+      </div>
+      <p class="summary" id="summary" aria-live="polite">Loading…</p>
+      <div class="rows">
+        <div class="info"><span class="tag kpi">KPI</span><span id="kpiNote">Revenue, growth, basket and retention against targets</span></div>
+        <div class="info"><span class="tag data">Data</span><span id="dataNote"></span></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const TOKEN_KEY = "pme_session";             // same key the API-keys dashboard uses
+  const fmt = new Intl.NumberFormat("en", { maximumFractionDigits: 1 });
+  const money = new Intl.NumberFormat("en", { maximumFractionDigits: 2 });
+
+  const day = (iso, withYear) => new Date(iso + "T00:00:00Z").toLocaleDateString("en-GB",
+    { day: "numeric", month: "short", ...(withYear ? { year: "numeric" } : {}), timeZone: "UTC" });
+
+  function showMessage(node, text, linkText) {
+    node.textContent = text + " ";
+    node.classList.add("error");
+    if (linkText) { const a = document.createElement("a"); a.href = "/"; a.textContent = linkText; node.append(a); }
+    $("card").classList.remove("loading");
+  }
+
+  function render(d) {
+    const { from, to } = d.period;
+    $("range").textContent = `${day(from, from.slice(0, 4) !== to.slice(0, 4))} – ${day(to, true)}`;
+    $("source").textContent = d.source;
+
+    const q = d.data_quality.percent;
+    $("quality").hidden = q == null;
+    if (q != null) $("quality").textContent = `Data quality ${fmt.format(q)}%`;
+
+    $("summary").classList.remove("error");
+    $("summary").textContent = d.summary;
+    $("dataNote").textContent = d.data_note;
+
+    const k = d.kpis;                          // numbers behind the KPI line, on hover
+    $("kpiNote").title = [`Revenue ${money.format(k.revenue)}`,
+      k.growth_pct == null ? null : `Growth ${fmt.format(k.growth_pct)}%`,
+      k.basket == null ? null : `Basket ${money.format(k.basket)}`,
+      k.retention_pct == null ? null : `Retention ${fmt.format(k.retention_pct)}% (target ${fmt.format(k.retention_target_pct)}%)`,
+    ].filter(Boolean).join(" · ");
+    $("card").classList.remove("loading");
+  }
+
+  async function load() {
+    const token = sessionStorage.getItem(TOKEN_KEY);
+    if (!token) return showMessage($("summary"), "You are not signed in.", "Sign in on the dashboard");
+    const btn = $("reload");
+    btn.disabled = true;
+    $("card").classList.add("loading");
+    try {
+      const qs = new URLSearchParams(location.search);          // optional ?date_from=…&date_to=…&retention_target=…
+      const params = new URLSearchParams();
+      for (const k of ["date_from", "date_to", "retention_target"]) if (qs.get(k)) params.set(k, qs.get(k));
+      const res = await fetch("/api/report/sales?" + params, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.status === 401) {
+        sessionStorage.removeItem(TOKEN_KEY);
+        return showMessage($("summary"), "Session expired.", "Sign in again");
+      }
+      if (!res.ok) {
+        let msg = "The report could not be loaded.";
+        try { const j = await res.json(); if (typeof j.detail === "string") msg = j.detail; } catch {}
+        return showMessage($("summary"), msg);
+      }
+      render(await res.json());
+    } catch {
+      showMessage($("summary"), "Network error, please try again.");
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  $("reload").addEventListener("click", load);
+  load();
+</script>
+</body>
+</html>

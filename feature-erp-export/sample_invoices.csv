@@ -1,0 +1,13 @@
+﻿Invoice No;Customer;Invoice Date;Amount Total;Status
+INV-001;Sarl Atlas;2026-01-05;12500.00;paid
+INV-002;Eurl El-Badr;2026-01-18;8400.50;paid
+INV-003;Sarl Atlas;2026-02-04;15200.00;paid
+INV-004;TechMed DZ;2026-02-21;9750.00;paid
+INV-005;Eurl El-Badr;2026-03-07;11300.00;paid
+INV-006;Sarl Atlas;2026-03-19;16800.00;paid
+INV-007;TechMed DZ;2026-04-02;14100.00;paid
+INV-008;Maghreb Supply;2026-04-25;22000.00;paid
+INV-009;Sarl Atlas;2026-05-10;18900.00;paid
+INV-010;Eurl El-Badr;2026-05-22;13450.00;posted
+INV-011;TechMed DZ;2026-06-08;19600.00;posted
+INV-012;Maghreb Supply;2026-06-20;25300.00;overdue
